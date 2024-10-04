@@ -92,8 +92,8 @@ func (r *PostRepository) GetAnalyticsData(dateRange string, posts []models.Post)
 
 func (r *PostRepository) UpdateYesterdayViews() ([]models.Post, error) {
 	var dbPosts []models.Post
-	yesterday := utils.GetDateNDaysAgo(-2)
-	err := r.DB.Where("DATE(published_at) = ?", yesterday).Find(&dbPosts).Error
+	yesterday := utils.GetDateNDaysAgo(2)
+	err := r.DB.Where("DATE(published_at) >= ?", yesterday).Find(&dbPosts).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch posts for yesterday: %w", err)
 	}
