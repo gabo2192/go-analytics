@@ -45,8 +45,12 @@ func NewAuthorRepository(db *gorm.DB, sanityClient *sanity.Client, analyticsClie
 }
 
 func (r *AuthorRepository) CreateAuthor() ([]models.Author, error) {
-	query := `*[_type == 'author']{'id':_id,name}`
-	result, err := r.Sanity.Query(query, nil)
+	thirtyDaysAgo := utils.GetDateNDaysAgo(30)
+	query := `*[_type == 'author'&& _createdAt > $date]{'id':_id,name}`
+	params := map[string]interface{}{
+		"date": thirtyDaysAgo,
+	}
+	result, err := r.Sanity.Query(query, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Sanity: %w", err)
 	}

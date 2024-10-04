@@ -169,6 +169,11 @@ func main() {
 		} else {
 			log.Println("Monthly author analytics updated successfully")
 		}
+		_, err = authorRepo.CreateAuthor()
+		if err != nil {
+			log.Printf("Error fetching authors: %v", err)
+		}
+		log.Println("Authors fetched successfully")
 	})
 	if err != nil {
 		log.Printf("Error setting up monthly author analytics update cron job: %v", err)
