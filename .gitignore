@@ -1,3 +1,4 @@
 .env
 tmp
 analytics-go.pem
+.DS_Store

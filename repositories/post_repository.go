@@ -93,7 +93,7 @@ func (r *PostRepository) GetAnalyticsData(dateRange string, posts []models.Post)
 func (r *PostRepository) UpdateYesterdayViews() ([]models.Post, error) {
 	var dbPosts []models.Post
 	yesterday := utils.GetDateNDaysAgo(2)
-	err := r.DB.Where("DATE(published_at) >= ?", yesterday).Find(&dbPosts).Error
+	err := r.DB.Where("DATE(published_at) >= ?", yesterday).Where("slug is not NULL").Find(&dbPosts).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch posts for yesterday: %w", err)
 	}
@@ -133,7 +133,7 @@ func (r *PostRepository) updateViewsForDateRange(rangeType string) ([]models.Pos
 	var dbPosts []models.Post
 	nDaysAgo := utils.GetDateNDaysAgo(utils.GetDaysFromRangeType(rangeType))
 	
-	err := r.DB.Where("DATE(published_at) = ?", nDaysAgo).Find(&dbPosts).Error
+	err := r.DB.Where("DATE(published_at) = ?", nDaysAgo).Where("slug is not NULL").Find(&dbPosts).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch posts for %s: %w", rangeType, err)
 	}
