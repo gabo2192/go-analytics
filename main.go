@@ -15,6 +15,7 @@ import (
 	"thedefiant.io/analytics/models"
 	repository "thedefiant.io/analytics/repositories"
 	"thedefiant.io/analytics/services/analytics"
+	"thedefiant.io/analytics/services/beehiiv"
 	"thedefiant.io/analytics/services/sanity"
 )
 
@@ -41,7 +42,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.Post{}, &models.Author{})
+	err = db.AutoMigrate(&models.Post{}, &models.Author{}, &models.BeehiivPostMetrics{})
 	if err != nil {
 		log.Fatalf("Failed to auto migrate: %v", err)
 	}
@@ -56,11 +57,18 @@ func main() {
 		log.Fatalf("Failed to create Analytics client: %v", err)
 	}
 
+	beehiivClient, err := beehiiv.NewClient()
+	if err != nil {
+		log.Fatalf("Failed to create Beehiiv client: %v", err)
+	}
+
 	postRepo := repository.NewPostRepository(db, sanityClient, analyticsClient)
 	authorRepo := repository.NewAuthorRepository(db, sanityClient, analyticsClient)
+	beehiivRepo := repository.NewBeehiivMetricsRepository(db, beehiivClient)
 
 	postHandler := handlers.NewPostHandler(postRepo)
 	authorHandler := handlers.NewAuthorHandler(authorRepo)
+	beehiivHandler := handlers.NewBeehiivHandler(beehiivRepo)
 
 	// Set up cron jobs
 	cronJob := cron.New(cron.WithLocation(time.UTC))
@@ -176,6 +184,20 @@ func main() {
 		}
 		log.Println("Authors fetched successfully")
 	})
+	if (err != nil) {
+		log.Printf("Error setting up monthly author analytics update cron job: %v", err)
+	}
+
+	_, err = cronJob.AddFunc("0 12 * * 0", func() {
+		log.Println("Fetching Beehiiv metrics")
+		err := beehiivRepo.UpdatePostMetrics()
+		if err != nil {
+			log.Printf("Error fetching Beehiiv metrics: %v", err)
+		}
+		log.Println("Beehiiv metrics fetched successfully")
+	})
+	
+
 	if err != nil {
 		log.Printf("Error setting up monthly author analytics update cron job: %v", err)
 	}
@@ -194,6 +216,11 @@ func main() {
 	app.Get("/api/authors", authorHandler.GetAuthors)
 	app.Post("/api/authors", authorHandler.CreateAuthor)
 	app.Get("/api/authors/:id", authorHandler.GetAuthorByID)
+
+	// Beehiiv
+	app.Get("/api/beehiiv/update",beehiivHandler.UpdatePostMetrics)
+	app.Get("/api/beehiiv/posts",beehiivHandler.GetWeekPostMetrics)
+	app.Get("/api/beehiiv/alpha",beehiivHandler.GetWeekAlphaMetrics)
 
 	port := os.Getenv("PORT")
 	if port == "" {
