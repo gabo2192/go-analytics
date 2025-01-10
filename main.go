@@ -221,6 +221,9 @@ func main() {
 	app.Get("/api/beehiiv/update",beehiivHandler.UpdatePostMetrics)
 	app.Get("/api/beehiiv/posts",beehiivHandler.GetWeekPostMetrics)
 	app.Get("/api/beehiiv/alpha",beehiivHandler.GetWeekAlphaMetrics)
+	app.Get("/api/beehiiv/free", beehiivHandler.GetFreePostsMetrics)
+	app.Get("/api/beehiiv/free-month", beehiivHandler.GeMonthFreeMetrics)
+	app.Get("/api/beehiiv/alpha-month", beehiivHandler.GeMonthAlphaMetrics)
 
 	port := os.Getenv("PORT")
 	if port == "" {

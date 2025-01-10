@@ -173,7 +173,7 @@ func (r *BeehiivMetricsRepository) GetWeekAlphaMetrics() (BeehiivWeekMetrics, er
 			Date: time.Now(),
 		}
 
-	err := r.DB.Where("publish_date >= ?", time.Now().AddDate(0, 0, -8)).Where("title LIKE ?", "DeFi Alpha:%").
+	err := r.DB.Where("title LIKE ?", "DeFi Alpha:%").Limit(1).
 		Order("publish_date desc").
 		Find(&metrics).Error
 	// get metrics and average them
@@ -235,6 +235,40 @@ func (r *BeehiivMetricsRepository) GetTopPerformingPosts(limit int) ([]models.Be
 		Find(&metrics).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch top performing posts: %w", err)
+	}
+	return metrics, nil
+}
+
+func (r *BeehiivMetricsRepository) GetFreePostsMetrics() ([]models.BeehiivPostMetrics, error) {
+	var metrics []models.BeehiivPostMetrics
+	err := r.DB.Where("NOT title LIKE ?", "DeFi Alpha:%").Order("publish_date desc").Limit(6).Find(&metrics).Error
+		
+	if err != nil {
+		return metrics, fmt.Errorf("failed to fetch latest post metrics: %w", err)
+	}
+	return metrics, nil
+}
+
+func (r *BeehiivMetricsRepository) GetFreePostsMonthlyMetrics() ([]models.BeehiivPostMetrics, error) {
+	var metrics []models.BeehiivPostMetrics
+	// get last month date
+	lastMonth := time.Now().AddDate(0, -1, 0)
+	err := r.DB.Where("NOT title LIKE ? AND publish_date >= ?", "DeFi Alpha:%", lastMonth).Order("publish_date desc").Find(&metrics).Error
+		
+	if err != nil {
+		return metrics, fmt.Errorf("failed to fetch latest post metrics: %w", err)
+	}
+	return metrics, nil
+}
+
+func (r *BeehiivMetricsRepository) GetAlphaPostsMonthlyMetrics() ([]models.BeehiivPostMetrics, error) {
+	var metrics []models.BeehiivPostMetrics
+	// get last month date
+	lastMonth := time.Now().AddDate(0, -1, 0)
+	err := r.DB.Where("title LIKE ? AND publish_date >= ?", "DeFi Alpha:%", lastMonth).Order("publish_date desc").Find(&metrics).Error
+		
+	if err != nil {
+		return metrics, fmt.Errorf("failed to fetch latest post metrics: %w", err)
 	}
 	return metrics, nil
 }

@@ -56,20 +56,7 @@ func (h *BeehiivHandler) GetWeekPostMetrics(c *fiber.Ctx) error {
 		"data":    metrics,
 	})
 }
-func (h *BeehiivHandler) GetWeekAlphaMetrics(c *fiber.Ctx) error {
-	metrics, err := h.Repo.GetWeekAlphaMetrics()
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Error fetching post metrics",
-			"error":   err.Error(),
-		})
-	}
 
-	return c.JSON(fiber.Map{
-		"message": "Post metrics fetched successfully",
-		"data":    metrics,
-	})
-}
 
 // GetPostMetricsByID retrieves metrics for a specific post
 func (h *BeehiivHandler) GetPostMetricsByID(c *fiber.Ctx) error {
@@ -137,5 +124,63 @@ func (h *BeehiivHandler) UpdatePostMetrics(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message": "Post metrics updated successfully",
+	})
+}
+
+func (h *BeehiivHandler) GetFreePostsMetrics(c *fiber.Ctx) error {
+	metrics, err := h.Repo.GetFreePostsMetrics()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error fetching free post metrics",
+			"error":   err.Error(),
+		})
+	}
+	return c.JSON(fiber.Map{
+		"message": "Free post metrics fetched successfully",
+		"data":    metrics,
+	})
+}
+
+func (h *BeehiivHandler) GetWeekAlphaMetrics(c *fiber.Ctx) error {
+	metrics, err := h.Repo.GetWeekAlphaMetrics()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error fetching post metrics",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Post metrics fetched successfully",
+		"data":    metrics,
+	})
+}
+
+func (h *BeehiivHandler) GeMonthAlphaMetrics(c *fiber.Ctx) error {
+	metrics, err := h.Repo.GetAlphaPostsMonthlyMetrics()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error fetching post metrics",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Post metrics fetched successfully",
+		"data":    metrics,
+	})
+}
+func (h *BeehiivHandler) GeMonthFreeMetrics(c *fiber.Ctx) error {
+	metrics, err := h.Repo.GetFreePostsMonthlyMetrics()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error fetching post metrics",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Post metrics fetched successfully",
+		"data":    metrics,
 	})
 }
