@@ -3,9 +3,11 @@ package repository
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
+
 	"thedefiant.io/analytics/models"
 	"thedefiant.io/analytics/services/analytics"
 	"thedefiant.io/analytics/services/sanity"
@@ -13,7 +15,7 @@ import (
 )
 
 type AuthorRepository struct {
-	DB     *gorm.DB
+	DB     *sql.DB
 	Sanity *sanity.Client
 	Analytics *analytics.Client
 }
@@ -36,7 +38,7 @@ type AuthorView struct {
 }
 
 
-func NewAuthorRepository(db *gorm.DB, sanityClient *sanity.Client, analyticsClient *analytics.Client) *AuthorRepository {
+func NewAuthorRepository(db *sql.DB, sanityClient *sanity.Client, analyticsClient *analytics.Client) *AuthorRepository {
 	return &AuthorRepository{
 		DB:     db,
 		Sanity: sanityClient,
@@ -46,7 +48,7 @@ func NewAuthorRepository(db *gorm.DB, sanityClient *sanity.Client, analyticsClie
 
 func (r *AuthorRepository) CreateAuthor() ([]models.Author, error) {
 	thirtyDaysAgo := utils.GetDateNDaysAgo(30)
-	query := `*[_type == 'author'&& _createdAt > $date]{'id':_id,name}`
+	query := `*[_type == 'author' && _createdAt > $date]{'id': _id, name}`
 	params := map[string]interface{}{
 		"date": thirtyDaysAgo,
 	}
@@ -60,69 +62,103 @@ func (r *AuthorRepository) CreateAuthor() ([]models.Author, error) {
 		return nil, fmt.Errorf("failed to unmarshal Sanity result: %w", err)
 	}
 
-	for _, author := range authors {
-		err := r.DB.Create(&author).Error
-		if err != nil {
-			if err.Error() == "duplicate key value violates unique constraint" {
-				log.Printf("Skipping duplicate author: %s", *author.ID)
-				continue
-			}
-			log.Printf("Error creating author: %v", err)
-		}
+	if len(authors) == 0 {
+		log.Println("No new authors found")
+		return authors, nil
 	}
+
+	// Build SQL INSERT
+	var values []interface{}
+	var placeholders []string
+	i := 1
+
+	now := time.Now()
+	for _, author := range authors {
+		if author.ID == nil || *author.Name == "" {
+			continue
+		}
+		placeholders = append(placeholders, fmt.Sprintf("($%d, $%d, $%d)", i, i+1, i+2))
+		values = append(values, *author.ID, author.Name, now)
+		i += 3
+	}
+
+	querySQL := `
+		INSERT INTO authors (id, name, created_at)
+		VALUES ` + strings.Join(placeholders, ",") + `
+		ON CONFLICT (id) DO NOTHING
+	`
+
+	_, err = r.DB.Exec(querySQL, values...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert authors: %w", err)
+	}
+
+	log.Printf("✅ Inserted %d authors (duplicates skipped)", len(values)/3)
 	return authors, nil
 }
 
 func (r *AuthorRepository) GetAuthorsFromDatabase() ([]AuthorsResponse, error) {
-	var authorsWithViews []AuthorWithViews
+	query := `
+	SELECT a.id, a.name, a.created_at, av.views, av.created_at
+	FROM authors a
+	LEFT JOIN author_views av ON a.id = av.author_id
+	ORDER BY a.id, av.created_at DESC
+	`
 
-	// Fetch all authors with their views
-	err := r.DB.Model(&models.Author{}).
-		Select("authors.*, author_views.views, author_views.created_at").
-		Joins("LEFT JOIN author_views ON authors.id = author_views.author_id").
-		Order("authors.id, author_views.created_at DESC").
-		Where("author_views.views IS NOT NULL").
-		Find(&authorsWithViews).Error
-
+	rows, err := r.DB.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch authors with views: %w", err)
 	}
+	defer rows.Close()
 
-	// map author views into author response struct appending views if author exists
-	authors := make([]AuthorsResponse, 0)
-	for _, author := range authorsWithViews {
-		if len(authors) == 0 || *authors[len(authors)-1].ID != *author.ID {
+	var authors []AuthorsResponse
+	var currentID *string
+	var currentIndex = -1
+
+	for rows.Next() {
+		var id, name string
+		var authorCreated, viewCreated time.Time
+		var views sql.NullInt64
+
+		err := rows.Scan(&id, &name, &authorCreated, &views, &viewCreated)
+		if err != nil {
+			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+
+		if currentID == nil || *currentID != id {
+			currentID = &id
+			currentIndex++
 			authors = append(authors, AuthorsResponse{
 				Author: models.Author{
-					ID: author.ID,
-					Name: author.Name,
-					CreatedAt: author.CreatedAt,
+					ID:        &id,
+					Name:      &name,
+					CreatedAt: authorCreated,
 				},
-				Views: []AuthorView{
-					{
-						View: 	author.Views,
-						CreatedAt: author.CreatedAt,
-					},
-				},
+				Views: []AuthorView{},
 			})
-	} else {
-		authors[len(authors)-1].Views = append(authors[len(authors)-1].Views, AuthorView{
-			View: author.Views,
-			CreatedAt: author.CreatedAt,
-		})
-	}
-}
+		}
 
-	
+		if views.Valid {
+			authors[currentIndex].Views = append(authors[currentIndex].Views, AuthorView{
+				View:      views.Int64,
+				CreatedAt: viewCreated,
+			})
+		}
+	}
 
 	return authors, nil
 }
 
 
 func (r *AuthorRepository) GetAuthorByID(id string) (*models.Author, error) {
+	query := `SELECT id, name, created_at FROM authors WHERE id = $1`
+
 	var author models.Author
-	err := r.DB.Where("id = ?", id).First(&author).Error
+	err := r.DB.QueryRow(query, id).Scan(&author.ID, &author.Name, &author.CreatedAt)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to fetch author by ID: %w", err)
 	}
 	return &author, nil
@@ -185,44 +221,85 @@ func (r *AuthorRepository) GetSanityPostsByAuthorCurrentMonth() ([]models.Output
 	return outputAuthors, nil
 }
 
-func (r *AuthorRepository) UpdateAnalyticsViews()([]models.AuthorViews, error){
+func (r *AuthorRepository) UpdateAnalyticsViews() ([]models.AuthorViews, error) {
 	authorsAndSlugs, err := r.GetSanityPostsByAuthorCurrentMonth()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get authors and slugs: %w", err)
 	}
-	authorViews:= make([]models.AnalyticsReponse, len(authorsAndSlugs))
-	for i, author := range authorsAndSlugs {
-		
-		authorViews[i].ID = author.ID
-		
-		pageViews, err := r.Analytics.GetPageViews("last30days", author.Slugs)
-		
-		if err != nil {
-			return nil, fmt.Errorf("failed to get page views: %w", err)
-		}
-		for _, slug := range author.Slugs {
-			authorViews[i].Views += pageViews[slug]
-		}	
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Load known authors
+	rows, err := r.DB.Query(`SELECT id FROM authors`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch author ids: %w", err)
 	}
-	authorViewsDB := make([]models.AuthorViews, len(authorViews))
-	for i, authorView := range authorViews {
-		authorViewsDB[i] = models.AuthorViews{
-			AuthorId: &authorView.ID,
-			Views: authorView.Views,
-			CreatedAt: time.Now(),
+	defer rows.Close()
+
+	known := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
 		}
-		err := r.DB.Create(&authorViewsDB[i]).Error
-		if err != nil {
-			log.Printf("Error creating author views: %v", err)
-		}
+		known[id] = struct{}{}
 	}
-	return authorViewsDB, nil
+
+	var values []interface{}
+	var placeholders []string
+	i := 1
+	for _, a := range authorsAndSlugs {
+		if _, ok := known[a.ID]; !ok {
+			log.Printf("⚠️ Skipping author view insert for missing author_id: %s", a.ID)
+			continue
+		}
+
+		views := int64(0)
+		pageViews, err := r.Analytics.GetPageViews("last30days", a.Slugs)
+		if err != nil {
+			return nil, err
+		}
+		for _, slug := range a.Slugs {
+			views += pageViews[slug]
+		}
+
+		placeholders = append(placeholders, fmt.Sprintf("($%d, $%d, $%d)", i, i+1, i+2))
+		values = append(values, a.ID, views, today)
+		i += 3
+	}
+
+	if len(values) == 0 {
+		log.Println("ℹ️ No valid AuthorViews to insert")
+		return nil, nil
+	}
+
+	query := `
+		INSERT INTO author_views (author_id, views, created_at)
+		VALUES ` + strings.Join(placeholders, ",") + `
+		ON CONFLICT (author_id, created_at) DO NOTHING`
+
+	if _, err := r.DB.Exec(query, values...); err != nil {
+		return nil, fmt.Errorf("insert author views failed: %w", err)
+	}
+
+	log.Printf("✅ Inserted %d AuthorViews", len(values)/3)
+	return nil, nil
 }
 
 func (r *AuthorRepository) UpdateAuthor(author *models.Author) error {
-	return r.DB.Save(author).Error
+	query := `UPDATE authors SET name = $1 WHERE id = $2`
+	_, err := r.DB.Exec(query, author.Name, author.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update author: %w", err)
+	}
+	return nil
 }
 
 func (r *AuthorRepository) DeleteAuthor(id string) error {
-	return r.DB.Delete(&models.Author{}, "id = ?", id).Error
+	_, err := r.DB.Exec(`DELETE FROM authors WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete author: %w", err)
+	}
+	return nil
 }

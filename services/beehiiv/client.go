@@ -18,6 +18,7 @@ type Client struct {
 
 type PostResponse struct {
 	Data []Post `json:"data"`
+	TotalPages int   `json:"total_pages"`
 }
 
 type Post struct {
@@ -68,7 +69,7 @@ func NewClient() (*Client, error) {
 }
 
 func (c *Client) GetPosts(page int) (*PostResponse, error) {
-	endpoint := fmt.Sprintf("%s/publications/%s/posts?expand=stats&limit=100&page=%d&direction=desc&order_by=publish_date", 
+	endpoint := fmt.Sprintf("%s/publications/%s/posts?expand=stats&limit=10&page=%d&direction=desc&order_by=publish_date&status=confirmed", 
 		c.baseURL, 
 		c.publicationID,
 		page,
