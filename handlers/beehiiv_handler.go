@@ -4,6 +4,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	repository "thedefiant.io/analytics/repositories"
@@ -114,8 +115,21 @@ func (h *BeehiivHandler) GetTopPerformingPosts(c *fiber.Ctx) error {
 
 // UpdatePostMetrics triggers a manual update of post metrics
 func (h *BeehiivHandler) UpdatePostMetrics(c *fiber.Ctx) error {
-	err := h.Repo.UpdatePostMetrics()
-	if err != nil {
+	untilStr := c.Query("until", "")
+	var until *time.Time
+
+	if untilStr != "" {
+		parsed, err := time.Parse("2006-01-02", untilStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid 'until' format. Expected YYYY-MM-DD",
+				"error":   err.Error(),
+			})
+		}
+		until = &parsed
+	}
+
+	if err := h.Repo.UpdatePostMetrics(until); err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error updating post metrics",
 			"error":   err.Error(),
